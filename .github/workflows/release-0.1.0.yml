@@ -1,0 +1,96 @@
+name: Release 0.1.0
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Generate reproducible Gradle wrapper
+        run: gradle wrapper --gradle-version 8.10.2
+
+      - name: Run unit tests and assemble debug APK
+        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
+
+      - name: Prepare release APK
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk release/Sleep-Calendar-Alarm-v0.1.0-debug.apk
+          sha256sum release/Sleep-Calendar-Alarm-v0.1.0-debug.apk | tee release/SHA256SUMS.txt
+
+      - name: Guard immutable release
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v0.1.0"
+          APK="Sleep-Calendar-Alarm-v0.1.0-debug.apk"
+          if gh release view "$TAG" --json assets > release-existing.json 2>/dev/null; then
+            if jq -e --arg name "$APK" '.assets[] | select(.name == $name)' release-existing.json >/dev/null; then
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+              echo "The immutable release and expected APK already exist; leaving them unchanged."
+              exit 0
+            fi
+            echo "Release $TAG exists but is incomplete or inconsistent. Refusing to overwrite it."
+            exit 1
+          fi
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+
+      - name: Publish immutable GitHub Release
+        if: steps.guard.outputs.exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.0
+          target_commitish: ${{ github.sha }}
+          name: Sleep Calendar Alarm v0.1.0
+          prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: true
+          body: |
+            ## Sleep Calendar Alarm v0.1.0 — experimental test build
+
+            - Initial Phase 1 implementation: calendar event lookup, 135-minute target calculation, earlier-only comparison, and user-visible ACTION_SET_ALARM request.
+            - Does not edit, delete, disable, or silently replace the existing alarm.
+            - New alarms use Sleep as Android's defaults; message and vibration are copied only when available.
+            - Debug-signed sideloading APK; not a Play Store/production release.
+
+            **Physical-device validation required:** confirm Calendar Provider access, Sleep as Android alarm-provider read access, ACTION_SET_ALARM handling, resulting defaults, duplicate behavior, and that the original alarm remains unchanged. Build success does not establish these behaviors.
+          files: |
+            release/Sleep-Calendar-Alarm-v0.1.0-debug.apk
+            release/SHA256SUMS.txt
+
+      - name: Verify release tag points to source commit
+        if: steps.guard.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v0.1.0" --jq '.object.sha')
+          TAG_TYPE=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v0.1.0" --jq '.object.type')
+          if [ "$TAG_TYPE" != "commit" ] || [ "$TAG_SHA" != "$GITHUB_SHA" ]; then
+            echo "Release tag does not point directly to the source commit."
+            echo "type=$TAG_TYPE tag_sha=$TAG_SHA source_sha=$GITHUB_SHA"
+            exit 1
+          fi
+          echo "Verified v0.1.0 -> $GITHUB_SHA"
