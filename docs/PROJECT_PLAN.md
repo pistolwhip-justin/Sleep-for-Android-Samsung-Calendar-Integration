@@ -7,7 +7,7 @@ A standalone Android companion reads events from Android Calendar Provider (incl
 
 ## Phase 1 — Quick Settings + create-earlier-alarm request
 
-**Scope**
+**Target behavior**
 - One Quick Settings tile enables/disables automatic evaluation.
 - Select the earliest timed event today; exclude all-day events.
 - Target = event start minus exactly 135 minutes.
@@ -16,29 +16,35 @@ A standalone Android companion reads events from Android Calendar Provider (incl
 - If current alarm is later, request a new alarm through Android ACTION_SET_ALARM.
 - Never edit, delete, or disable the existing alarm.
 - Use Sleep as Android's new-alarm defaults as the minimum supported behavior.
-- Best-effort duplication of repeat days, message/label, and vibration only where reliably available and supported by the intent API. Do not claim to duplicate sound, smart-wake window, or proprietary preferences.
+- Best-effort copy only metadata that is reliably readable and supported by Android intent extras. Exact duplication of repeat days, ringtone, smart-wake, snooze, and proprietary preferences is not guaranteed.
 
-**Important behavior**
-- A new alarm can coexist with the existing alarm. The app must not silently remove the old alarm.
-- The user must be shown/allowed to confirm the alarm request; no hidden background alarm creation.
-- Do not create an alarm if the current Sleep as Android alarm cannot be read reliably or if no supported receiver is available.
-- Calendar permission is requested at runtime; the toggle persists.
-- Re-evaluate on tile activation and explicit user request. Calendar/time/reboot automation is deferred until basic device behavior is proven.
-- No event titles, descriptions, attendees, or locations in logs.
+**Implemented in v0.1.1**
+- Android application shell and persistent Quick Settings enabled/disabled tile.
+- Runtime Calendar permission request and CalendarContract.Instances query for today's timed events.
+- Fixed 135-minute target calculation.
+- Read-only query of Sleep as Android's alarm Content Provider and earlier-only guard.
+- ACTION_SET_ALARM request explicitly addressed to Sleep as Android; receiver confirmation UI remains visible.
+- Existing alarm is never written, deleted, or disabled.
+- Best-effort message and vibration extras when provider values are available.
+- Debug APK built through GitHub Actions; five unit tests passed.
 
-**Phase 1 readiness gates**
-1. Automated tests pass for event selection, all-day exclusion, 135-minute calculation, and earlier-only guard.
-2. CI builds a debug APK from committed source.
-3. APK installs on target Samsung device.
-4. Verify Calendar Provider access and Sleep as Android alarm-provider read access.
-5. Verify ACTION_SET_ALARM resolves to Sleep as Android and creates the intended alarm with its defaults.
-6. Verify repeat-day/message/vibration copying where supported; document unsupported fields.
-7. Confirm original alarm remains unchanged and duplicate behavior is understood.
-8. Test no-event, all-day-only, no-alarm, denied-permission, and inaccessible-provider paths.
-9. Update README and docs with actual test results.
-10. Publish immutable versioned Release and verified APK attachment under global protocol Section 7.1.
+**Not yet implemented / verified**
+- The tile currently toggles the enabled state and opens the app; the user must tap **Evaluate calendar and alarm**. Tile-triggered automatic evaluation is not implemented yet.
+- Repeat-day mapping is not implemented because the provider's day-of-week encoding has not been verified.
+- Physical-device read permission, ACTION_SET_ALARM receiver behavior, defaults, and duplicate behavior remain unverified.
+- No background observers, calendar-change receiver, date/time receiver, or reboot automation yet.
 
-**Status:** Phase 1 test implementation authorized; physical-device behavior remains unverified until tested.
+**Readiness gates**
+1. Complete tile-driven evaluation and permission handling.
+2. Verify provider read access and the meaning/units of its alarmtime field on the target Sleep as Android version.
+3. Verify ACTION_SET_ALARM resolves to Sleep as Android and creates the intended new alarm with its defaults.
+4. Confirm original alarm remains enabled and unchanged and duplicate behavior is understood.
+5. Verify message/vibration extras; determine whether repeat days can safely be copied.
+6. Test no-event, all-day-only, no-alarm, denied-permission, and inaccessible-provider paths.
+7. Physical-device installation and behavior tests on the target Samsung phone.
+8. Update README and docs with actual device results before declaring Phase 1 complete.
+
+**Build/release status:** v0.1.1 is published as an immutable prerelease. CI build and 5 unit tests passed. APK is debug-signed. Physical-device acceptance is outstanding.
 
 ## Phase 2 — Transit time
 Calculate transit time between a configured sleep location and first event. Decide routing provider, location/privacy permissions, network/offline behavior, and missing-location fallbacks. Gate: route calculations/privacy behavior tested and Phase 1 regression tests pass.
